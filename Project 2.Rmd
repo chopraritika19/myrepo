@@ -1,0 +1,398 @@
+---
+title: "US Education by State - 1992"
+author: Ritika Chopra (rc47535)
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Improvements as of 05/10/2021
+One improvement made to this was fixing the label on a graph in the linear regression section. It was originally titled something that did not have relation to the actual analysis.
+
+Another improvement was adding whether or not predictors were significant to interpretations of coefficients when performing multiple regression. This helps to understand the strength of the model.  
+
+
+## Introduction
+
+```{r}
+library(carData)
+library(tidyverse)
+
+### IMPORTING DATA
+#load States data from cardata package into environment, name it States.edu1, and convert rownames to column
+data(States)
+States.edu1 <- rownames_to_column(States, "State")
+#set working directory and import second set of education and states data
+setwd("~/Downloads")
+States.edu2 <- read.csv("states_all.csv")
+#import state names & abbreviation data
+State.Abbr<- read.csv("csvData.csv")
+### CLEANING STATES.EDU1 FOR JOINING PURPOSES
+#rename column on States.edu1 so that there is a match when joining two datasets
+States.edu1 <- States.edu1%>%
+rename(Code = State)
+#recode data in States.edu1 so that they match with States.Abbr instances
+States.edu1 <- States.edu1 %>%
+mutate(Code = recode(Code, 'CN' = 'CT'))
+
+### JOINS
+#Join States.edu1 and state abbreviation datasets
+States.edu1 <- States.edu1%>%
+full_join(State.Abbr, by="Code") %>%
+select(-Abbrev)
+#Reorder columns for better readability
+States.edu1 <- States.edu1[c(1, 9, 2, 3, 4, 5, 6, 7, 8)]
+#Recode all states in States.edu1 to match States.edu2 instances
+States.edu1$State = toupper(States.edu1$State)
+States.edu1$State <- gsub(" ", "_", States.edu1$State)
+#Create a primary_key column in States.edu1
+States.edu1 <- States.edu1 %>%
+mutate(PRIMARY_KEY = paste("1992", State, sep = "_"))
+#Join States.edu1 with States.edu2 on the primary key column
+States.edu3 <- States.edu1%>%
+left_join(States.edu2, by="PRIMARY_KEY")%>%
+select(-10, -11, -13, -12, -21, -28, -29, -34)
+
+```
+
+This report explores US education data by state in 1992. One data set, acquired from the carData package in R, provides information like the population of the state in 1992, average SAT scores for both components (math and verbal), and the percentage of graduating high school students in the state who took the SAT exam. Another data set, acquired from Kaggle, provides education data per state from 1992 to 2019. It includes information like state expenditure related to education and a breakdown of students enrolled in schools by school year. Finally, the third data set simply provides the state associated with the state abbreviation. This was acquired from the World Population Review, just to make joining the two previous data sets easier. The data was already tidy, but to make it easier to work with I had to re-code some of the abbreviations so that there was a matching key variable between the three data sets.
+
+Education has always been a topic of interest to me, especially as I delve deeper into the U.S. education as a student myself. I have experienced the education system in depth in two different states, spending the first 18 years of my life in Colorado before coming to Texas
+for college. As such, the discrepancies between education in both states has always intrigued me, and I have been interested in understanding this in a broader context as well. Although this information is outdated, it is always valuable to understand historical data to
+get a grasp of if and how the education system has developed for the better over the years. One of the associations that I expect to find is that the states who tend to spend more on education will see higher average scores on standardized tests. Another association is that states
+who have less participation in tests will see higher average scores as well.
+
+## Exploratory Data Analysis
+
+```{r}
+
+#Create categorical variable that categorizes percentage of SAT students in the state who took the exam as either high or low 
+States.edu3 <- States.edu3 %>%
+  mutate(SATparticipation = ifelse(percent >= 50, "High", "Low"))
+
+#Create categorical variable that classifies whether a state is spending more or less on education in relation to other states in 1992
+States.edu3 <- States.edu3 %>%
+  mutate(meaninsexp = mean(INSTRUCTION_EXPENDITURE)) %>%
+  mutate(instr_exp_categorical = ifelse(INSTRUCTION_EXPENDITURE >= meaninsexp, "High", "Low"))
+
+#Find the number of states that fall in each category for SAT Participation rates
+States.edu3 %>%
+  select(SATparticipation) %>%
+  group_by(SATparticipation) %>%
+  summarize(n())
+
+#Mean of state spending on public education depending on whether or not they have high SAT participation rates
+States.edu3 %>%
+  group_by(SATparticipation) %>%
+  summarize(mean(dollars))
+
+#Mean of SAT verbal scores depending on region
+States.edu3 %>%
+  group_by(region) %>%
+  summarize(mean(SATV))
+
+#Correlation heat map
+States.edu3.num <- States.edu3 %>%
+column_to_rownames("State") %>%
+select_if(is.numeric)
+States.edu3.num <- States.edu3.num %>%
+select(1, 2, 3, 4, 5, 6, 7, 12)
+cor(States.edu3.num)
+
+cor(States.edu3.num) %>%
+# Save as a data frame
+as.data.frame %>%
+# Convert row names to an explicit variable
+rownames_to_column %>%
+# Pivot so that all correlations appear in the same column
+pivot_longer(-1, names_to = "other_var", values_to = "correlation") %>%
+# Specify variables are displayed alphabetically from top to bottom
+ggplot(aes(rowname, factor(other_var, levels = rev(levels(factor(other_var)))), fill=correlation)) +
+# Heatmap with geom_tile
+geom_tile() +
+# Change the scale to make the middle appear neutral
+#scale_fill_gradient2(low="red",mid="white",high="blue") +
+# Overlay values
+geom_text(aes(label = round(correlation,2)), color = "black", size = 1.5) +
+# Give title and labels
+labs(title = "Correlation matrix for 1992 \nUS Education", x = "", y = "") + scale_fill_gradient2(low = "#e7dbdb", high = "#c1c8cb", mid="white") + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 6
+)) + theme(axis.text.y = element_text(angle = 45, hjust = 1, size = 6))
+
+```
+
+18 states show a relatively high SAT participation rate, while 33 states show a relatively low participation rate. 
+
+States with higher SAT participation rates show a higher mean state spending on public education: the mean for states with high particpation rates is $6244.61, as compared to $4592.33 for states with lower SAT participation rates. This is further tested through the randomization test later in the report.
+
+There seems to be sizable differences in mean SAT Verbal score across different regions, showing a range of 75.9047 between the lowest (MA region) and highest (WNC region). This is a relationship that will be further explored through an ANOVA test.
+
+CORRELATION MATRIX: 
+This correlation matrix gives the correlation between all numeric variables. Some that stood out to me specifically are the strong negative correlation between percent & SATV and percent & SATM.
+
+Another thing that stood out to me was that there was a moderately high negative correlation of the dollars variable (state spending on public education) against SAT Verbal and against SAT Math. This means that the more money put into public education, the lower the SAT
+scores tended to be that year.
+
+One relationship that is explored through linear regression later in the report is between SAT math scores and average teacher's salary in the state. Right now, this correlation matrix is showing a moderately negative relationship between the two: the less the average teacher's salary, the higher the SAT math score tended to be in the year 1992. This is different from what I would expect.
+
+## MANOVA
+
+```{r}
+
+#Conduct MANOVA test to see if at least one of the response variables differ by region
+manova_edu <- manova(cbind(SATV, SATM, dollars, pay, TOTAL_EXPENDITURE, INSTRUCTION_EXPENDITURE) ~ region, data = States.edu3)
+summary(manova_edu)
+
+#Since MANOVA was significant, perform univariate ANOVAs
+summary.aov(manova_edu)
+
+#Perform post-hoc analysis for significant ANOVA tests
+pairwise.t.test(States.edu3$SATV, States.edu3$region, p.adj="none")
+pairwise.t.test(States.edu3$SATM, States.edu3$region, p.adj="none")
+pairwise.t.test(States.edu3$dollars, States.edu3$region, p.adj="none")
+pairwise.t.test(States.edu3$pay, States.edu3$region, p.adj="none")
+pairwise.t.test(States.edu3$TOTAL_EXPENDITURE, States.edu3$region, p.adj="none")
+pairwise.t.test(States.edu3$INSTRUCTION_EXPENDITURE, States.edu3$region, p.adj="none")
+
+#223 different hypothesis tests were conducted in this entire sequence
+
+#Probability of at least one type I error, assuming an alpha level of 0.05
+1 - (0.95^223)
+
+#Bonferroni adjusted significance level
+0.05/223
+```
+
+MANOVA test null hypothesis: For each response variable, the means for each region are equal. 
+MANOVA test alternative hypothesis: For at least one response variable, at least one of the region's means differs. 
+
+The MANOVA test was significant, allowing us to reject the null hypothesis and perform one-way ANOVA tests. All ANOVA tests were significant, allowing us to proceed with post-hoc analyses on each significant response variable.
+
+223 different hypothesis tests were conducted in this entire sequence. There is a 0.9999 chance of there being at least one type I error, assuming an alpha level of 0.05. The Bonferroni-adjusted significance level is now 0.0002. 
+
+Upon using this adjusted significance level, there are still a number of significant tests. For one, SATV, SATM, dollars, and pay are still show signficant differences in means across regions. Further, within these post-hoc tests, there are a good number of significant differences as well. For example, when looking at the hypothesis test comparing mean SAT Verbal Scores among regions, there seems to be a significant difference between the MTN region and the SA region.
+
+The assumptions that needed to be met to run this MANOVA is that this data needs to be a random sample with independent observations, there is multivariate normality of the numeric response variables, there is homogenity of within-groups covariance matrices, there is a linear relationship among response variables but no multicollinearity, and there are no extreme multivariate or univariate outliers. MANOVA assumptions are very restrictive, so all assumptions are likely not met.
+
+
+## Randomization Test
+```{r}
+
+#run randomization test testing whether there is a difference in mean of dollars of state spending on public education depending on whether or not a high percentage of students take the SAT in the state
+set.seed(348)
+diff_means_random <- vector()
+
+for(i in 1:5000){
+  temp <- States.edu3 %>% 
+    mutate(dollars = sample(dollars))
+  
+  diff_means_random[i] <- temp %>% 
+    group_by(SATparticipation) %>%
+    summarize(means = mean(dollars)) %>%
+    summarize(diff_means_random = -diff(means)) %>%
+    pull
+}
+
+obs_diff <- States.edu3 %>% 
+  group_by(SATparticipation) %>%
+  summarize(means = mean(dollars)) %>%
+  summarize(diff_means = -diff(means)) %>%
+  pull
+
+#obtain p-value
+abs_dmr <- abs(diff_means_random)
+mean(abs_dmr > obs_diff)
+
+#visualizing null distribution and test statistic
+true_diff <- States.edu3 %>%
+  group_by(SATparticipation) %>%
+  summarize(means = mean(dollars)) %>%
+  summarize(mean_diff = diff(means)) %>%
+  pull
+true_diff
+
+{hist(diff_means_random, main="Distribution of the mean differences", xlim = c(-2, 2)); abline(v = true_diff, col="red")}
+  
+```
+
+By performing the randomization test, we have broken the association between the group and the response.
+
+Null Hypothesis: The mean state spending on public education is the same for states that have low SAT participation rates and high SAT participation rates.
+
+Alternative Hypothesis: The mean state spending on public education is different for states that have low SAT participation rates and high SAT participation rates.
+
+Because of the very low p-value, we have sufficient evidence to reject the null. The mean state spending on public education is different depending on whether or not the participation rate is high.
+
+## Linear Regression
+
+```{r}
+
+#center the pay variable
+States.edu3 <- States.edu3 %>%
+  mutate(pay_c = pay - mean(pay, na.rm = TRUE))
+
+#fitting a multiple regression model that predicts SAT Math from average teacher's salary in the state and state spending on instruction
+edufit <- lm(SATM ~ pay_c*instr_exp_categorical, data = States.edu3)
+summary(edufit)
+
+#visualize interaction between the two variables on the response
+States.edu3 %>%
+  ggplot(aes(x = pay, y = SATM, color = instr_exp_categorical)) + geom_point() +
+  geom_smooth(method = lm, se = FALSE) + ggtitle("SAT Math Score vs. Average Teacher Salary")
+```
+
+Interpretation of coefficients: 
+1. Intercept: Holding average teacher's salary in the state at the mean salary for all states, the estimated SAT math score for states with relatively high instruction expenditure rates is 477.752.
+2. Coefficient estimate for pay_c: For every $1,000 increase in average teacher's salary for states with high instruction expenditure rates, the SAT math score is predicted to increase by about 1.679.
+3. Coefficient estimate for instr_exp_categoricalLow: Holding average teacher's salary at the mean salary for all states, states with low instruction expenditure have an expected 20.665 point higher SAT Math score than states with higher instruction expenditure.
+4. Coefficient estimate for pay_c:instr_exp_categoricalLow: The slope for average pay for teachers on SAT math score is -5.806 lower for states with lower instruction expenditure than it is for states with higher instruction expenditure.
+
+36.3% of the variation in SAT math scores can be explained by the model.
+
+```{r}
+#Checking assumptions
+# Residuals vs Fitted values plot
+plot(edufit, which = 1)
+
+# Histogram of residuals
+hist(edufit$residuals)
+
+# Q-Q plot for the residuals
+plot(edufit, which = 2)
+
+#Shapiro test for normality
+shapiro.test(edufit$residuals)
+
+# Breusch-Pagan test for homoscedacity
+library(sandwich);
+library(lmtest)
+bptest(edufit) 
+```
+
+Checking assumptions: 
+Linearity: The residual vs. fitted plot does not show as scattered of a plot as one might expect, so the linearity assumption may be violated. 
+Normality: The normality assumption is met. There is not too much deviantion from the line on the QQ plot, and this is confirmed by the high p-value attained by conducting the Shapiro-Wilk test.
+Homoscedacity: The residual plot does not show a funnel shape, so it seems as though the homoscedacity assumption is met. This can be confirmed from the high p-value attained from the Breusch-Pagan test.
+
+```{r}
+## STANDARD ERRORS
+
+# Uncorrected Standard Errors
+summary(edufit)$coef
+
+# Robust Standard Errors
+library(sandwich)
+coeftest(edufit, vcov = vcovHC(edufit))
+
+#Bootstrapped Standard Errors
+samp_SEs <- replicate(5000, {
+  # Bootstrap your data (resample observations)
+  boot_data <- sample_frac(States.edu3, replace = TRUE)
+  # Fit regression model
+  fitboot <- lm(SATM ~ pay_c*instr_exp_categorical, data = boot_data)
+  # Save the coefficients
+  coef(fitboot)
+})
+
+# Estimated SEs
+samp_SEs %>%
+  # Transpose the obtained matrices
+  t %>%
+  # Consider the matrix as a data frame
+  as.data.frame %>%
+  # Compute the standard error (standard deviation of the sampling distribution)
+  summarize_all(sd)
+```
+
+The robust standard errors tend to be a little higher with higher p-values than the uncorrected standard errors. The bootstrapped standard errors also tend to be a little higher than the uncorrected standard errors.
+
+
+## Logistic Regression
+
+```{r}
+#create categorical variable that classifies whether the SAT Verbal score is high or low  in relation to other states in 1992
+States.edu3 <- States.edu3 %>%
+  mutate(meansatv = mean(SATV)) %>%
+  mutate(satv_categorical = ifelse(SATV >= meansatv, "High", "Low"))
+
+#create binary categorical variable
+States.edu3 <- States.edu3 %>%
+  mutate(y = ifelse(satv_categorical == "High", 1, 0))
+
+#fit a logistic regression model predicting y from dollars and pay
+edufit2 <- glm(y ~ pay + SATparticipation, data = States.edu3, family = binomial(link="logit"))
+summary(edufit2)
+
+#exponentiate coefficients
+exp(coef(edufit2))
+```
+
+Interpretation of Coefficients (without exponentiating): 
+1. Intercept: Holding average teacher's salary in the state at 0, the log(odds) of a high SAT Verbal score for a state that has high SAT participation rates is -12.1264.
+2. Pay: For each $1,000 increase in average teacher's pay for states with high SAT participation rates, the log(odds) of a high SAT Verbal score is -0.226.
+3. participationLow: Holding average teacher's salary in the state at 0, states with a lower SAT participation rate have a log(odds) of higher SAT Verbal score that is 19.873 higher than states with a higher SAT participation rate. However, it is important to note that this coefficient is not significant, meaning that it is not necessarily a significant predictor. 
+
+```{r}
+#CONFUSION MATRIX
+
+#predicted probabilities and classification
+States.edu3$prob1 <- predict(edufit2, type = "response")
+
+States.edu3$predicted <- ifelse(States.edu3$prob1 > .5, "High SATV", "Low SATV")
+
+#create confusion matrix
+table(true_condition = States.edu3$satv_categorical, predicted_condition = States.edu3$predicted) %>% 
+  addmargins
+
+```
+
+
+Accuracy (correctly classified) = (23 + 20) / 51 = 0.8431
+
+The fitted logistic model correctly classifies SAT Verbal scores as either high or low 84.31% of the time.
+
+Sensitivity (True Positive Rate) = 23/24 = 0.9583
+
+The fitted logistic model correctly classifies states as having high SAT Verbal scores 95.83% of the time.
+
+Specificity (True Negative Rate) = 20/27 = 0.7407
+
+The model correctly classfies states as having low SAT Verbal scores 74.07% of the time.
+
+Precision (Positive Predictive Value) = 23/30 = 0.7667
+
+Of all the states that the model predicts as having high SAT Verbal scores in 1992, 76.67% of them actually do.
+
+```{r}
+#create density plot of log(odds) to outcome of SAT Verbal score
+
+States.edu3$logit <- predict(edufit2, type = "link")
+
+States.edu3 %>%
+  ggplot() + 
+  geom_density(aes(logit, color = satv_categorical, fill = satv_categorical), alpha = .4) +
+    geom_rug(aes(logit, color = satv_categorical)) + xlab("logit (log-odds)")
+
+```
+
+
+```{r}
+#create ROC plot
+library(plotROC)
+ROCplot <- ggplot(States.edu3) + geom_roc(aes(d = y, m = prob1), n.cuts = 0)
+ROCplot
+
+#calculate area under the curve
+AUC <- calc_auc(ROCplot)$AUC
+AUC
+
+```
+
+The area under the curve (0.9236) indicates that the model is of great quality for determining whether or not a state has high SAT Verbal scores.
+
+
+References: Garrard, R. (2020, April 13). U.S. education Datasets: Unification project. Retrieved March 22, 2021, from https://www.kaggle.com/noriuk/us-education-datasets-unification-project
+
+List of State Abbreviations. (n.d.). Retrieved March 22, 2021, from https://worldpopulationreview.com/states/state-abbreviations
+
